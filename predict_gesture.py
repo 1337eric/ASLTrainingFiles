@@ -27,8 +27,8 @@ def collect_frames_for_prediction():
             image.flags.writeable = True
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-            # Extract landmarks with updated face points
-            frame_landmarks = np.zeros((48, 3))  # 6 face + 42 hand points
+            # Extract landmarks with updated face and arm points
+            frame_landmarks = np.zeros((6 + 6 + 21 * 2, 3))  # 6 face + 6 arm + 21 per hand
             
             # Face landmarks (6 key points)
             KEY_FACE_POINTS = [
@@ -40,20 +40,37 @@ def collect_frames_for_prediction():
                 291  # Mouth right corner
             ]
             
+            # Arm tracking points
+            KEY_ARM_POINTS = [
+                11,  # Left shoulder
+                13,  # Left elbow
+                15,  # Left wrist
+                12,  # Right shoulder
+                14,  # Right elbow
+                16   # Right wrist
+            ]
+            
             if results.face_landmarks:
                 for idx, point_idx in enumerate(KEY_FACE_POINTS):
                     lm = results.face_landmarks.landmark[point_idx]
                     frame_landmarks[idx] = [lm.x, lm.y, lm.z]
             
+            # Add arm landmarks
+            if results.pose_landmarks:
+                start_idx = 6  # After face points
+                for idx, point_idx in enumerate(KEY_ARM_POINTS):
+                    lm = results.pose_landmarks.landmark[point_idx]
+                    frame_landmarks[start_idx + idx] = [lm.x, lm.y, lm.z]
+            
             # Right hand landmarks
             if results.right_hand_landmarks:
-                start_idx = 6  # After face points
+                start_idx = 6 + 6  # After face and arm points
                 for idx, lm in enumerate(results.right_hand_landmarks.landmark):
                     frame_landmarks[start_idx + idx] = [lm.x, lm.y, lm.z]
             
             # Left hand landmarks
             if results.left_hand_landmarks:
-                start_idx = 6 + 21  # After face and right hand
+                start_idx = 6 + 6 + 21  # After face, arm, and right hand
                 for idx, lm in enumerate(results.left_hand_landmarks.landmark):
                     frame_landmarks[start_idx + idx] = [lm.x, lm.y, lm.z]
 
@@ -66,6 +83,22 @@ def collect_frames_for_prediction():
                     x = int(pos.x * image.shape[1])
                     y = int(pos.y * image.shape[0])
                     cv2.circle(image, (x, y), 3, (0, 255, 0), -1)
+
+            # Draw arm landmarks and connect them with lines
+            if results.pose_landmarks:
+                for i in range(0, len(KEY_ARM_POINTS), 3):
+                    shoulder = results.pose_landmarks.landmark[KEY_ARM_POINTS[i]]
+                    elbow = results.pose_landmarks.landmark[KEY_ARM_POINTS[i+1]]
+                    wrist = results.pose_landmarks.landmark[KEY_ARM_POINTS[i+2]]
+                    
+                    # Convert to pixel coordinates
+                    shoulder_pos = (int(shoulder.x * image.shape[1]), int(shoulder.y * image.shape[0]))
+                    elbow_pos = (int(elbow.x * image.shape[1]), int(elbow.y * image.shape[0]))
+                    wrist_pos = (int(wrist.x * image.shape[1]), int(wrist.y * image.shape[0]))
+                    
+                    # Draw lines
+                    cv2.line(image, shoulder_pos, elbow_pos, (255, 0, 0), 2)
+                    cv2.line(image, elbow_pos, wrist_pos, (255, 0, 0), 2)
 
             mp_drawing.draw_landmarks(image, results.left_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
             mp_drawing.draw_landmarks(image, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
@@ -83,9 +116,14 @@ def collect_frames_for_prediction():
 
 def predict_gesture(model, label_encoder_classes, frames_data):
     # Reshape and flatten the input data
-    frames_data = frames_data.reshape(30, -1)  # Flatten each frame to 144 values
+    frames_data = frames_data.reshape(30, -1)  # Flatten each frame
     frames_data = frames_data.astype('float32')
-    frames_data = frames_data / np.max(frames_data)
+    
+    # Normalize the data
+    max_val = np.max(np.abs(frames_data))
+    if max_val > 0:
+        frames_data = frames_data / max_val
+    
     frames_data = np.expand_dims(frames_data, axis=0)
     
     # Make prediction
@@ -113,8 +151,8 @@ def collect_and_predict_continuous(model, label_encoder_classes):
             image.flags.writeable = True
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-            # Extract landmarks with updated face points
-            frame_landmarks = np.zeros((48, 3))  # 6 face + 42 hand points
+            # Extract landmarks with updated face and arm points
+            frame_landmarks = np.zeros((6 + 6 + 21 * 2, 3))  # 6 face + 6 arm + 21 per hand
             
             # Face landmarks (6 key points)
             KEY_FACE_POINTS = [
@@ -126,20 +164,37 @@ def collect_and_predict_continuous(model, label_encoder_classes):
                 291  # Mouth right corner
             ]
             
+            # Arm tracking points
+            KEY_ARM_POINTS = [
+                11,  # Left shoulder
+                13,  # Left elbow
+                15,  # Left wrist
+                12,  # Right shoulder
+                14,  # Right elbow
+                16   # Right wrist
+            ]
+            
             if results.face_landmarks:
                 for idx, point_idx in enumerate(KEY_FACE_POINTS):
                     lm = results.face_landmarks.landmark[point_idx]
                     frame_landmarks[idx] = [lm.x, lm.y, lm.z]
             
+            # Add arm landmarks
+            if results.pose_landmarks:
+                start_idx = 6  # After face points
+                for idx, point_idx in enumerate(KEY_ARM_POINTS):
+                    lm = results.pose_landmarks.landmark[point_idx]
+                    frame_landmarks[start_idx + idx] = [lm.x, lm.y, lm.z]
+            
             # Right hand landmarks
             if results.right_hand_landmarks:
-                start_idx = 6  # After face points
+                start_idx = 6 + 6  # After face and arm points
                 for idx, lm in enumerate(results.right_hand_landmarks.landmark):
                     frame_landmarks[start_idx + idx] = [lm.x, lm.y, lm.z]
             
             # Left hand landmarks
             if results.left_hand_landmarks:
-                start_idx = 6 + 21  # After face and right hand
+                start_idx = 6 + 6 + 21  # After face, arm, and right hand
                 for idx, lm in enumerate(results.left_hand_landmarks.landmark):
                     frame_landmarks[start_idx + idx] = [lm.x, lm.y, lm.z]
 
@@ -156,6 +211,22 @@ def collect_and_predict_continuous(model, label_encoder_classes):
                     x = int(pos.x * image.shape[1])
                     y = int(pos.y * image.shape[0])
                     cv2.circle(image, (x, y), 3, (0, 255, 0), -1)
+
+            # Draw arm landmarks and connect them with lines
+            if results.pose_landmarks:
+                for i in range(0, len(KEY_ARM_POINTS), 3):
+                    shoulder = results.pose_landmarks.landmark[KEY_ARM_POINTS[i]]
+                    elbow = results.pose_landmarks.landmark[KEY_ARM_POINTS[i+1]]
+                    wrist = results.pose_landmarks.landmark[KEY_ARM_POINTS[i+2]]
+                    
+                    # Convert to pixel coordinates
+                    shoulder_pos = (int(shoulder.x * image.shape[1]), int(shoulder.y * image.shape[0]))
+                    elbow_pos = (int(elbow.x * image.shape[1]), int(elbow.y * image.shape[0]))
+                    wrist_pos = (int(wrist.x * image.shape[1]), int(wrist.y * image.shape[0]))
+                    
+                    # Draw lines
+                    cv2.line(image, shoulder_pos, elbow_pos, (255, 0, 0), 2)
+                    cv2.line(image, elbow_pos, wrist_pos, (255, 0, 0), 2)
 
             mp_drawing.draw_landmarks(image, results.left_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
             mp_drawing.draw_landmarks(image, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS)

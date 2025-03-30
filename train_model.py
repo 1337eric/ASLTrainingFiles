@@ -21,19 +21,26 @@ def load_gesture_data(gestures_dir):
                 frame_path = os.path.join(recording_path, f"{frame}.npy")
                 if os.path.exists(frame_path):
                     frame_data = np.load(frame_path)
-                    # Ensure consistent shape: 48 landmarks * 3 coordinates = 144 values
+                    # Flatten the data regardless of original shape
                     frame_data = frame_data.flatten()
-                    if len(frame_data) == 144:  # 48 landmarks * 3 coordinates
-                        sequence.append(frame_data)
+                    sequence.append(frame_data)
             
             if len(sequence) == 30:  # Only use complete sequences
-                X.append(sequence)
-                y.append(gesture)
+                # Check if all frames in the sequence have the same shape
+                if all(len(frame) == len(sequence[0]) for frame in sequence):
+                    X.append(sequence)
+                    y.append(gesture)
+                else:
+                    print(f"Skipping inconsistent sequence in {recording_path}")
+    
+    if not X:
+        raise ValueError("No valid sequences found. Check your data collection process.")
     
     X = np.array(X)
     y = np.array(y)
     
-    print(f"Loaded data shape: {X.shape}")  # Should be (n_samples, 30, 144)
+    print(f"Loaded data shape: {X.shape}")
+    print(f"Each frame has {X.shape[-1]} features")
     return X, y
 
 def create_model(input_shape, num_classes):
@@ -62,16 +69,16 @@ def train_gesture_model(gestures_dir, model_save_path):
     X = X.astype('float32')
     
     # Normalize the data
-    X = X / np.max(X)
+    X = X / np.max(np.abs(X)) if np.max(np.abs(X)) > 0 else X
     
     # Split the data
     X_train, X_test, y_train, y_test = train_test_split(
         X, y_encoded, test_size=0.2, random_state=42
     )
     
-    # Create and compile model with correct input shape
+    # Create and compile model with dynamic input shape based on actual data
     model = create_model(
-        input_shape=(30, 48 * 3),  # 30 timesteps, 48 landmarks * 3 coordinates
+        input_shape=(30, X.shape[2]),  # 30 timesteps, features from actual data
         num_classes=len(label_encoder.classes_)
     )
     
@@ -88,7 +95,7 @@ def train_gesture_model(gestures_dir, model_save_path):
     model.fit(
         X_train, y_train,
         validation_data=(X_test, y_test),
-        epochs=50,
+        epochs=400,
         batch_size=32,
         callbacks=[
             tf.keras.callbacks.EarlyStopping(
